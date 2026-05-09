@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Datasets (large audio files)
+AVID/
+audio_dataset/
+final_age_dataset/
+intensity/
+ravdess_emotion/
+ravdess_intensity/
+
+# Generated files
+cache/
+plots/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
