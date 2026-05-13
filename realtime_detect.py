@@ -12,7 +12,7 @@ import tensorflow as tf
 
 from features import extract_mfcc
 
-# ── Config ───────────────────────────────────────────────────────────────────
+# Config
 SR          = 16000
 CHUNK_SEC   = 4       # recording window in seconds
 SILENCE_THR = 0.01    # RMS threshold — below this is treated as silence
@@ -41,7 +41,7 @@ MODELS_CFG = {
     },
 }
 
-# ── Model loading ─────────────────────────────────────────────────────────────
+# Model loading
 def load_models():
     models = {}
     for key, cfg in MODELS_CFG.items():
@@ -53,7 +53,7 @@ def load_models():
             models[key] = None
     return models
 
-# ── Inference ─────────────────────────────────────────────────────────────────
+# Inference
 def predict(audio: np.ndarray, model, cfg: dict):
     feat = extract_mfcc(
         audio,
@@ -69,7 +69,7 @@ def predict(audio: np.ndarray, model, cfg: dict):
     idx   = int(np.argmax(probs))
     return cfg["classes"][idx], float(probs[idx])
 
-# ── Output ────────────────────────────────────────────────────────────────────
+# Output
 def print_results(results: dict):
     now = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"\n{'─' * 40}")
@@ -79,11 +79,10 @@ def print_results(results: dict):
             print(f"  {cfg['label']:<12}: —")
         else:
             label, conf = results[key]
-            bar = "█" * int(conf * 10) + "░" * (10 - int(conf * 10))
-            print(f"  {cfg['label']:<12}: {label:<16} {bar}  {conf*100:.0f}%")
+            print(f"  {cfg['label']:<12}: {label:<16} {conf*100:.0f}%")
     print(f"{'─' * 40}")
 
-# ── Main loop ─────────────────────────────────────────────────────────────────
+# Main loop
 def main():
     print("=" * 40)
     print("  Real-time Speech Analysis")

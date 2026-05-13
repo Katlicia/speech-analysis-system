@@ -30,7 +30,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau # type: 
 
 from features import extract_mfcc
 
-# ── Config ───────────────────────────────────────────────────────────────────
+# Config
 DATASET_PATH = "final_age_dataset"
 CLASS_NAMES  = ["young", "middle", "old"]
 MAX_LEN      = 200
@@ -39,7 +39,7 @@ BATCH        = 32
 CACHE_X      = "cache/age_X.npy"
 CACHE_Y      = "cache/age_y.npy"
 
-# ── Data loading ──────────────────────────────────────────────────────────────
+# Data loading
 def load_dataset():
     if os.path.exists(CACHE_X) and os.path.exists(CACHE_Y):
         print("Loading from cache...")
@@ -65,7 +65,7 @@ def load_dataset():
     np.save(CACHE_Y, y)
     return X, y
 
-# ── Model ─────────────────────────────────────────────────────────────────────
+# Model
 def build_model(input_shape):
     model = Sequential([
         Conv1D(32, 3, activation="relu", padding="same", input_shape=input_shape),
@@ -94,7 +94,7 @@ def build_model(input_shape):
     ])
     return model
 
-# ── Plots ─────────────────────────────────────────────────────────────────────
+# Plots 
 def save_plots(history, y_true, y_pred, classes, prefix="plots/age"):
     os.makedirs(os.path.dirname(prefix), exist_ok=True)
     cm = confusion_matrix(y_true, y_pred)
@@ -134,7 +134,7 @@ def save_plots(history, y_true, y_pred, classes, prefix="plots/age"):
     plt.close()
     print(f"Plot saved -> {prefix}_results.png")
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# Main 
 if __name__ == "__main__":
     print("=" * 55)
     print("AGE — MFCC + 1D CNN")
