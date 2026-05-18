@@ -1,10 +1,12 @@
 """
-Streamlit web interface for real-time speech analysis.
-Background thread handles recording/inference; UI polls every 500ms.
+Streamlit web interface for speech analysis.
+Record from microphone or upload a WAV/MP3 — results shown on the same page.
 """
 
+import io
 import threading
 import datetime
+import librosa
 import numpy as np
 import sounddevice as sd
 import streamlit as st
@@ -12,9 +14,7 @@ import tensorflow as tf
 
 from features import extract_mfcc
 
-# Config
 SR          = 16000
-CHUNK_SEC   = 4
 SILENCE_THR = 0.01
 
 MODELS_CFG = {
@@ -54,11 +54,14 @@ def load_models():
 @st.cache_resource
 def get_shared():
     return {
-        "results": {},
-        "status":  "starting",
-        "updated": None,
-        "log":     [],
+        "is_recording": False,
+        "results":      {},
+        "status":       "idle",   # idle | recording | analyzing | done
+        "duration":     0.0,
+        "log":          [],
     }
+
+# Inference helpers
 
 def predict(audio, model, cfg):
     feat = extract_mfcc(audio, max_len=cfg["max_len"], sr=SR, include_delta=cfg["delta"])
@@ -68,59 +71,29 @@ def predict(audio, model, cfg):
     idx   = int(np.argmax(probs))
     return cfg["classes"][idx], float(probs[idx])
 
-def recording_loop(models, shared):
-    active = {k: v for k, v in models.items() if v is not None}
-    buf    = []
+def run_inference(audio: np.ndarray, models: dict) -> tuple[dict, float]:
+    duration = len(audio) / SR
+    if float(np.sqrt(np.mean(audio ** 2))) < SILENCE_THR:
+        return {}, duration
+    active  = {k: v for k, v in models.items() if v is not None}
+    results = {}
+    for key, model in active.items():
+        label, conf = predict(audio, model, MODELS_CFG[key])
+        if label:
+            results[key] = (label, conf)
+    return results, duration
 
-    def callback(indata, *_):
-        buf.extend(indata[:, 0].tolist())
-        if len(buf) < SR * CHUNK_SEC:
-            return
+def add_to_log(shared, results, duration, source="mic"):
+    entry = (
+        {"time": datetime.datetime.now().strftime("%H:%M:%S"),
+         "source": source,
+         "duration": f"{duration:.1f}s"}
+        | {k: v[0] for k, v in results.items()}
+    )
+    shared["log"].insert(0, entry)
+    shared["log"] = shared["log"][:50]
 
-        audio_4s = np.array(buf[:SR * CHUNK_SEC])
-        del buf[:SR * CHUNK_SEC]
-
-        if float(np.sqrt(np.mean(audio_4s ** 2))) < SILENCE_THR:
-            shared["status"]  = "silence"
-            shared["updated"] = datetime.datetime.now()
-            return
-
-        results = {}
-        for key, model in active.items():
-            label, conf = predict(audio_4s, model, MODELS_CFG[key])
-            if label:
-                results[key] = (label, conf)
-
-        if results:
-            shared["results"] = results
-            shared["status"]  = "active"
-            shared["updated"] = datetime.datetime.now()
-            entry = {"time": shared["updated"].strftime("%H:%M:%S")} | {
-                k: v[0] for k, v in results.items()
-            }
-            shared["log"].insert(0, entry)
-            shared["log"] = shared["log"][:50]
-
-    with sd.InputStream(samplerate=SR, channels=1, dtype="float32",
-                        blocksize=int(SR * 0.05), callback=callback):
-        threading.Event().wait()
-
-@st.fragment(run_every=0.5)
-def main_panel(shared):
-    status  = shared["status"]
-    updated = shared["updated"]
-
-    if status == "starting":
-        st.info("Starting microphone...")
-    elif status == "silence":
-        st.warning("No speech detected")
-    else:
-        ts = updated.strftime("%H:%M:%S") if updated else ""
-        st.success(f"Listening — last update: {ts}")
-
-    st.divider()
-
-    results = shared["results"]
+def show_results(results: dict):
     cols = st.columns(3)
     for i, (key, cfg) in enumerate(MODELS_CFG.items()):
         with cols[i]:
@@ -133,25 +106,128 @@ def main_panel(shared):
                 st.metric(label=cfg["label"], value="—", label_visibility="collapsed")
                 st.progress(0.0)
 
-    st.divider()
+# Recording thread
 
-    if shared["log"]:
-        st.subheader("Log")
-        st.dataframe(shared["log"], use_container_width=True)
+def record_and_analyze(models, shared):
+    buf = []
+
+    def callback(indata, *_):
+        if shared["is_recording"]:
+            buf.extend(indata[:, 0].tolist())
+
+    with sd.InputStream(samplerate=SR, channels=1, dtype="float32",
+                        blocksize=int(SR * 0.05), callback=callback):
+        while shared["is_recording"]:
+            threading.Event().wait(timeout=0.05)
+
+    if not buf:
+        shared["status"] = "idle"
+        return
+
+    shared["status"] = "analyzing"
+    audio = np.array(buf, dtype="float32")
+    results, duration  = run_inference(audio, models)
+    shared["results"]  = results
+    shared["duration"] = duration
+    shared["status"]   = "done"
+
+    if results:
+        add_to_log(shared, results, duration, source="mic")
+
+# Recording section (fragment for live updates)
+@st.fragment(run_every=0.5)
+def recording_section(shared):
+    status = shared["status"]
+    prev   = st.session_state.get("_prev_status")
+
+    # Full rerun when analysis finishes so button state updates
+    if prev == "analyzing" and status == "done":
+        st.session_state["_prev_status"] = status
+        st.rerun()
+    st.session_state["_prev_status"] = status
+
+    if status == "recording":
+        st.success("Recording... speak into the microphone")
+    elif status == "analyzing":
+        st.info("Analyzing audio...")
+    elif status == "done" and shared["results"]:
+        st.success(f"Microphone — {shared['duration']:.1f}s recorded")
+        show_results(shared["results"])
+    elif status == "done":
+        st.warning("No speech detected in recording")
 
 def main():
-    st.set_page_config(page_title="Speech Analysis", page_icon="🎙️", layout="centered")
-    st.title("🎙️ Real-time Speech Analysis")
+    st.set_page_config(page_title="Speech Analysis", layout="centered")
+    st.title("Speech Analysis")
 
     models = load_models()
     shared = get_shared()
 
-    if "thread_started" not in st.session_state:
-        threading.Thread(target=recording_loop, args=(models, shared), daemon=True).start()
-        st.session_state.thread_started = True
+    # Microphone
+    st.subheader("Microphone")
+    status = shared["status"]
+    if status in ("idle", "done"):
+        if st.button("Start Recording", type="primary", use_container_width=True):
+            shared["is_recording"] = True
+            shared["status"]       = "recording"
+            shared["results"]      = {}
+            threading.Thread(target=record_and_analyze, args=(models, shared), daemon=True).start()
+            st.rerun()
+    elif status == "recording":
+        if st.button("Stop & Analyze", type="secondary", use_container_width=True):
+            shared["is_recording"] = False
+            st.rerun()
+    else:
+        st.button("Analyzing...", disabled=True, use_container_width=True)
 
-    main_panel(shared)
-    st.caption(f"Window: {CHUNK_SEC}s  |  SR: {SR} Hz  |  Silence: {SILENCE_THR} RMS")
+    recording_section(shared)
+
+    # File Upload
+    st.divider()
+    st.subheader("Upload File")
+
+    uploaded = st.file_uploader(
+        "WAV or MP3, any sample rate",
+        type=["wav", "mp3"],
+        label_visibility="collapsed",
+    )
+
+    if uploaded is not None:
+        # Clear stale results when a different file is chosen
+        if st.session_state.get("upload_name") != uploaded.name:
+            st.session_state.pop("upload_results", None)
+            st.session_state["upload_name"] = uploaded.name
+
+        st.audio(uploaded)
+
+        if st.button("Analyze File", type="primary", use_container_width=True):
+            with st.spinner("Loading and analyzing audio..."):
+                audio, file_sr = librosa.load(io.BytesIO(uploaded.getvalue()), sr=None, mono=True)
+                if file_sr != SR:
+                    audio = librosa.resample(audio, orig_sr=file_sr, target_sr=SR)
+                results, duration = run_inference(audio, models)
+            st.session_state["upload_results"] = (results, duration)
+            if results:
+                add_to_log(shared, results, duration, source=uploaded.name)
+
+        if "upload_results" in st.session_state:
+            results, duration = st.session_state["upload_results"]
+            if results:
+                st.success(f"File — {duration:.1f}s")
+                show_results(results)
+            else:
+                st.warning("No speech detected in the file")
+    else:
+        st.session_state.pop("upload_results", None)
+        st.session_state.pop("upload_name", None)
+
+    # History
+    if shared["log"]:
+        st.divider()
+        st.subheader("History")
+        st.dataframe(shared["log"], use_container_width=True)
+
+    st.caption(f"SR: {SR} Hz  |  Silence threshold: {SILENCE_THR} RMS")
 
 if __name__ == "__main__":
     main()
