@@ -28,3 +28,6 @@ Thumbs.db
 .DS_Store
 
 test/
+test_wav/
+results.csv
+predict_batch.py
