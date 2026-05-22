@@ -40,6 +40,14 @@ Opens at `http://localhost:8501`.
 
 Results show predicted class and confidence for each of the three classifiers.
 
+## Datasets
+
+| Model | Dataset | Classes |
+| --- | --- | --- |
+| Gender | Mozilla Common Voice | female, male |
+| Age | Mozilla Common Voice Turkish | young, middle, old |
+| Intensity | [AVID: Aalto Vocal Intensity](https://zenodo.org/records/10524873) | loud (loud + very loud), quiet (soft + normal) |
+
 ## Model Training
 
 Each classifier is trained independently. Pre-trained models are included in `models/`.
@@ -57,6 +65,20 @@ python train_intensity_avid.py
 ```
 
 Trained models are saved to `models/`. Confusion matrices and metrics plots are saved to `plots/`. Extracted features are cached in `cache/` to speed up retraining.
+
+## Results
+
+### Gender Classification
+
+![Gender Classification](plots/gender_results.png)
+
+### Age Classification
+
+![Age Classification](plots/age_results.png)
+
+### Intensity Classification
+
+![Intensity Classification](plots/intensity_avid_results.png)
 
 ## Model Architecture
 
