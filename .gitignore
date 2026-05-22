@@ -31,3 +31,5 @@ test/
 test_wav/
 results.csv
 predict_batch.py
+
+convert_test_mp3_to_wav.py
