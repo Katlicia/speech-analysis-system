@@ -14,8 +14,7 @@ import tensorflow as tf
 
 from features import extract_mfcc
 
-SR          = 16000
-SILENCE_THR = 0.01
+SR = 16000
 
 MODELS_CFG = {
     "gender": {
@@ -73,8 +72,6 @@ def predict(audio, model, cfg):
 
 def run_inference(audio: np.ndarray, models: dict) -> tuple[dict, float]:
     duration = len(audio) / SR
-    if float(np.sqrt(np.mean(audio ** 2))) < SILENCE_THR:
-        return {}, duration
     active  = {k: v for k, v in models.items() if v is not None}
     results = {}
     for key, model in active.items():
@@ -227,7 +224,7 @@ def main():
         st.subheader("History")
         st.dataframe(shared["log"], use_container_width=True)
 
-    st.caption(f"SR: {SR} Hz  |  Silence threshold: {SILENCE_THR} RMS")
+    st.caption(f"SR: {SR} Hz")
 
 if __name__ == "__main__":
     main()
